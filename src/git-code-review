@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Sometimes we could have git errors and instead of barreling on,
+# we need to fail before error handling supports it.
+set -e
+
 USAGE="<COMMAND> [FLAGS] <pr_branch>
 
 Generate code-review branch that has been resolved against a base branch.
@@ -13,16 +17,21 @@ Commands:
 
            --remote <remote>              Pull from the remote when updating the base and
                                           pull-request branchs before branch resolution
+                                          (Same as calling --base-remote and --pr-remote with the same value)
+                                          default: origin
 
            --base-remote <remote>         Pull from the remote when updating the base
                                           branch before branch resolution
+                                          default: origin
 
            --pr-remote <remote>           Pull from the remote when updating the
                                           pull-request branch before branch resolution
+                                          default: origin
 
            --resolve-method METHOD        Use METHOD to resolve the differences between
                                           the base and pull-request branches
                                           Possible methods are as follows:
+                                          default: rebase
 
                                           rebase    reapply the pull-requests commits on top
                                                     of the base branch's tip
@@ -60,7 +69,6 @@ function start_code_review() {
     local pr_remote="$(git config code-review.pr-remote     || echo ${base_remote})"
     local branch_resolution_command="rebase"
 
-
     while [ $# -gt 0 ]; do
         case $1 in
             -b | --base)
@@ -93,6 +101,13 @@ function start_code_review() {
 
     # FIXME: The resolve method should be checked to make sure that it is either 'merge' or 'rebase'
 
+    # Need to make sure the user actually passed in a branch or else we'll fall apart
+    if [ -z ${pr_branch} ]; then
+        echo "No branch name was specified!"
+        usage
+        die
+    fi
+
     local merge_request_branch="code-review/${pr_branch}"
     require_work_tree_exists
     cd_to_toplevel
@@ -109,6 +124,7 @@ function start_code_review() {
         fetch "${pr_remote}"
     fi
 
+    echo "git branch '${merge_request_branch}' '${pr_branch}'"
     git branch "${merge_request_branch}" "${pr_branch}"
     git checkout "${merge_request_branch}"
     git branch --unset-upstream
@@ -124,7 +140,7 @@ function clean_up_current_branch() {
         echo "current branch was not created by git code-review"
         return 1
     fi
-    
+
     git checkout ${base_branch}
     git branch -D ${current_branch}
 }
@@ -134,9 +150,6 @@ function main() {
         "clear")
             shift 1
             clear_all "$@"
-            ;;
-        "")
-            start_code_review "$@"
             ;;
         "start")
             shift 1
